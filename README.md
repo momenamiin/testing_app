@@ -1,6 +1,6 @@
 # testing_app
 
-A new Flutter project.
+a testing flutter project
 
 ## Getting Started
 
