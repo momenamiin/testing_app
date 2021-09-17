@@ -1,44 +1,66 @@
-FROM gitpod/workspace-full:latest
+FROM gitpod/workspace-full-vnc
+SHELL ["/bin/bash", "-c"]
 
-LABEL maintainer="vitortorresvt@gmail.com"
+ENV ANDROID_HOME=/home/gitpod/androidsdk \
+    FLUTTER_VERSION=2.5.0-stable
 
+# Install dart
 USER root
+RUN curl -fsSL https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && curl -fsSL https://storage.googleapis.com/download.dartlang.org/linux/debian/dart_stable.list > /etc/apt/sources.list.d/dart_stable.list \
+    && install-packages build-essential dart libkrb5-dev gcc make gradle android-tools-adb android-tools-fastboot
 
-RUN apt-get update -y
-RUN apt-get install -y gcc make build-essential wget curl unzip apt-utils xz-utils libkrb5-dev gradle libpulse0 android-tools-adb android-tools-fastboot
-RUN apt remove --purge openjdk-*-jdk
-RUN apt-get install -y openjdk-8-jdk
-
+# Install flutter
 USER gitpod
+RUN cd /home/gitpod \
+    && wget https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}.tar.xz \
+    && tar -xvf flutter*.tar.xz \
+    && rm -f flutter*.tar.xz
 
-# Android
-ENV JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk-amd64
-ENV ANDROID_HOME="/home/gitpod/.android"
-ENV ANDROID_SDK_URL="https://dl.google.com/android/repository/sdk-tools-linux-4333796.zip"
-ENV ANDROID_SDK_ARCHIVE="${ANDROID_HOME}/archive"
-ENV ANDROID_STUDIO_PATH="/home/gitpod/"
+RUN flutter/bin/flutter precache
+RUN echo 'export PATH="$PATH:/home/gitpod/flutter/bin"' >> /home/gitpod/.bashrc
 
-RUN cd "${ANDROID_STUDIO_PATH}"
-RUN wget -qO android_studio.zip https://dl.google.com/dl/android/studio/ide-zips/3.3.0.20/android-studio-ide-182.5199772-linux.zip
-RUN unzip android_studio.zip
-RUN rm -f android_studio.zip
+# Install Open JDK
+USER root
+RUN apt update \
+    && apt install openjdk-8-jdk -y \
+    && update-java-alternatives --set java-1.8.0-openjdk-amd64
 
-RUN mkdir -p "${ANDROID_HOME}"
-RUN touch $ANDROID_HOME/repositories.cfg
-RUN wget -q "${ANDROID_SDK_URL}" -O "${ANDROID_SDK_ARCHIVE}"
-RUN unzip -q -d "${ANDROID_HOME}" "${ANDROID_SDK_ARCHIVE}"
-RUN echo y | "${ANDROID_HOME}/tools/bin/sdkmanager" "platform-tools" "platforms;android-28" "build-tools;28.0.3"
-RUN rm "${ANDROID_SDK_ARCHIVE}"
+# Install SDK Manager
+USER gitpod
+RUN  wget https://dl.google.com/android/repository/commandlinetools-linux-7583922_latest.zip \
+    && mkdir -p $ANDROID_HOME/cmdline-tools/latest \
+    && unzip commandlinetools-linux-*.zip -d $ANDROID_HOME \
+    && rm -f commandlinetools-linux-*.zip \
+    && mv $ANDROID_HOME/cmdline-tools/bin $ANDROID_HOME/cmdline-tools/latest \
+    && mv $ANDROID_HOME/cmdline-tools/lib $ANDROID_HOME/cmdline-tools/latest
 
-# Flutter
-ENV FLUTTER_HOME="/home/gitpod/flutter"
-RUN git clone https://github.com/flutter/flutter $FLUTTER_HOME
-RUN $FLUTTER_HOME/bin/flutter channel stable
-RUN $FLUTTER_HOME/bin/flutter upgrade
-RUN $FLUTTER_HOME/bin/flutter precache
-RUN $FLUTTER_HOME/bin/flutter config --enable-web --no-analytics
-# RUN yes "y" | $FLUTTER_HOME/bin/flutter doctor --android-licenses -v
-ENV PUB_CACHE=/workspace/.pub_cache
+RUN echo "export ANDROID_HOME=$ANDROID_HOME" >> /home/gitpod/.bashrc \
+    && echo 'export PATH=$ANDROID_HOME/emulator:$ANDROID_HOME/tools:$ANDROID_HOME/cmdline-tools/bin:$ANDROID_HOME/platform-tools:$PATH' >> /home/gitpod/.bashrc
 
-# Env
-RUN echo 'export PATH=${ANDROID_HOME}/tools:${ANDROID_HOME}/tools/bin:${FLUTTER_HOME}/bin:${FLUTTER_HOME}/bin/cache/dart-sdk/bin:${PUB_CACHE}/bin:${FLUTTER_HOME}/.pub-cache/bin:$PATH' >>~/.bashrc
+# Install Android Image version 30
+USER gitpod
+RUN yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-30" "emulator"
+RUN yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "system-images;android-30;google_apis;x86_64"
+RUN echo no | $ANDROID_HOME/cmdline-tools/latest/bin/avdmanager create avd -n avd28 -k "system-images;android-30;google_apis;x86_64"
+
+
+# Install Google Chrome
+USER root
+RUN apt-get update \
+  && apt-get install -y apt-transport-https \
+  && curl -sSL https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
+  && echo "deb [arch=amd64] https://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+  && apt-get update \
+  && sudo apt-get install -y google-chrome-stable
+
+# misc deps
+RUN apt-get install -y \
+  libasound2-dev \
+  libgtk-3-dev \
+  libnss3-dev \
+  fonts-noto \
+  fonts-noto-cjk
+
+# For Qt WebEngine on docker
+ENV QTWEBENGINE_DISABLE_SANDBOX 1
